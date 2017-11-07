@@ -1,5 +1,5 @@
-const ACCESS_TOKEN = "<enter access token>";
-const REPO_PATH = "<enter repo path>"; //EX: 'Mad-Chemist/GithubPRHooks';
+const ACCESS_TOKEN = require('./credentials').ACCESS_TOKEN;
+const REPO_PATH = require('./config').REPO_PATH;
 const REPO_CHECKOUT_PATH = `https://${ACCESS_TOKEN}:x-oauth-basic@github.com/${REPO_PATH}.git`;
 
 const LABELS = {
@@ -32,12 +32,15 @@ console.log("====================================");
 init();
 
 function init() {
-	createLabelIfNeeded(queryPullRequests);
+    client.limit(function (err, left, max, reset) {
+        console.log(`Client rate limit check ${left}/${max} resets at ${new Date(reset * 1000)}`);
+        createLabelIfNeeded(queryPullRequests);
+    });
 }
 
 function queryPullRequests() {
 	ghrepo.prs(function(error, body, headers) {
-		if (!handlePossibleError(error) && body && body.length > 0) {
+		if (!handlePossibleError(`ghrepo.prs`,error) && body && body.length > 0) {
 			let latestPR = body[0];
 			let ghIssue = client.issue(REPO_PATH, latestPR.number);
 			let branchName = latestPR.head.ref;
@@ -109,17 +112,17 @@ function queryPullRequests() {
 
 function addLabelTestingPR(ghIssue) {
 	if (ghIssue) {
-		ghIssue.addLabels([LABELS.TESTING.name], handlePossibleError);
+		ghIssue.addLabels([LABELS.TESTING.name], (error) => handlePossibleError(`ghrepo.addLabels`, error));
 	}
 }
 
 function createLabelIfNeeded(callback) {
 	ghrepo.labels(function(error, body, headers) {
-		if (!handlePossibleError(error)) { // no error
+		if (!handlePossibleError(`ghrepo.labels`,error)) { // no error
 			let match = _.findWhere(body, LABELS.TESTING);
 			if (!match) {
 				ghrepo.label(LABELS.TESTING, function(error, body, headers) {
-					if (!handlePossibleError(error)) { // no error
+					if (!handlePossibleError(`ghrepo.label`,error)) { // no error
 						callback();
 					}
 				});
@@ -135,16 +138,16 @@ function createCommentOnIssue(issue, comment) {
 	if (issue && typeof issue.createComment === "function" && typeof comment === "string") {
 		issue.createComment({
 			body: comment
-		}, handlePossibleError);
+		}, (error) => handlePossibleError(`issue.createComment`, error));
 	}
 }
 
-function handlePossibleError(error) {
+function handlePossibleError(method,error) {
 	if (error) {
-		console.error("ERROR: ")
-		console.error("\r\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-		console.error(`\r\n ~~~~ ${error} ~~~~`);
-		console.error("\r\n ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \r\n")
+		console.error(`ERROR in ${method}: 
+		~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		~~~~ ${error} ~~~~
+		~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~`);
 
 		return true;
 	}
