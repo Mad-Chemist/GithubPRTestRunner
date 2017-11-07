@@ -3,18 +3,18 @@ const {REPO_PATH, PACKAGE_PATH, TEST_CMD} = require('./config');
 const REPO_CHECKOUT_PATH = `https://${ACCESS_TOKEN}:x-oauth-basic@github.com/${REPO_PATH}.git`;
 
 const LABELS = {
-	TESTING: {
-		name: "TESTING",
-		color: "fbca04"
-	},
-	PASS: {
-		name: "PASSES",
-		color: "28a745"
-	},
-	FAIL: {
-		name: "FAILURE",
-		color: "28a745"
-	}
+    TESTING: {
+        name: "TESTING",
+        color: "fbca04"
+    },
+    PASS: {
+        name: "PASSES",
+        color: "28a745"
+    },
+    FAIL: {
+        name: "FAILURE",
+        color: "28a745"
+    }
 };
 const {promisify} = require('util');
 const _ = require('underscore');
@@ -27,9 +27,9 @@ const path = require('path');
 const client = github.client(ACCESS_TOKEN);
 let ghrepo = client.repo(REPO_PATH);
 let GH = {
-	getLabels: promisify(ghrepo.labels.bind(ghrepo)),
-	addLabel:  promisify(ghrepo.label.bind(ghrepo)),
-	getPRs:    promisify(ghrepo.prs.bind(ghrepo))
+    getLabels: promisify(ghrepo.labels.bind(ghrepo)),
+    addLabel: promisify(ghrepo.label.bind(ghrepo)),
+    getPRs: promisify(ghrepo.prs.bind(ghrepo))
 };
 let npm = promisify(npmRun.exec);
 let activePR;
@@ -64,75 +64,76 @@ function getLatestPR() {
 }
 
 function addLabelTestingPR(ghIssue) {
-	return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         if (ghIssue) {
             ghIssue.addLabels([LABELS.TESTING.name], (error) => {
-            	if(error){
-            		reject(`Unable to add label to PR: ${error}`)
-				}else{
-            		resolve(ghIssue)
-				}
+                if (error) {
+                    reject(`Unable to add label to PR: ${error}`)
+                } else {
+                    resolve(ghIssue)
+                }
             });
-        }else{
-        	reject(`No PR to label`);
-		}
-	})
+        } else {
+            reject(`No PR to label`);
+        }
+    })
 }
 
 function checkoutPR(ghIssue) {
     return new Promise((resolve, reject) => {
-        if(!ghIssue) return reject(`No issue to checkout`);
-        
-    	tmp.dir(/*{ unsafeCleanup: true },*/ function(error, path, cleanupCallback) {
-			if(error) reject(`Unable to create temp dir: ${error}`);
-			else{
+        if (!ghIssue) return reject(`No issue to checkout`);
+
+        tmp.dir(/*{ unsafeCleanup: true },*/ function (error, path, cleanupCallback) {
+            if (error) reject(`Unable to create temp dir: ${error}`);
+            else {
                 console.log(`Checking out source code from ${ghIssue.repo}/${ghIssue.number} into ${path}`);
                 checkout({
-							// url: `${REPO_CHECKOUT_PATH}`,
-							url: `https://${ACCESS_TOKEN}:x-oauth-basic@github.com/MusicChoice/Settop-Box.git`,
-							// args: ["--branch", branchName],
-							destination: path
-				})
-					.then(() => resolve(path))
-					.catch((error) => reject(`Unable to checkout repo: ${error}`))
-			}
+                    // url: `${REPO_CHECKOUT_PATH}`,
+                    url: `https://${ACCESS_TOKEN}:x-oauth-basic@github.com/MusicChoice/Settop-Box.git`,
+                    // args: ["--branch", branchName],
+                    destination: path
+                })
+                    .then(() => resolve(path))
+                    .catch((error) => reject(`Unable to checkout repo: ${error}`))
+            }
         })
-	})
+    })
 }
 
 function installDeps(dir) {
-	return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         let cwd = path.join(dir, PACKAGE_PATH);
         console.log(`Installing dependencies in ${cwd}`);
         npm("npm set progress=false")
-			.then(()=>{
-				npm("npm install", {
+            .then(() => {
+                npm("npm install", {
                     cwd: cwd
                 })
-				.then(() => resolve(cwd))
+                    .then(() => resolve(cwd))
             })
 
-		.catch((err) => reject(`Failed to install dependencies: ${err}`))
-	})
+            .catch((err) => reject(`Failed to install dependencies: ${err}`))
+    })
 }
+
 function runTests(dir) {
     return new Promise((resolve, reject) => {
         console.log(`Running tests in ${dir}`);
         npmRun.exec(TEST_CMD, {
             cwd: dir
         }, function (err, stdout, stderr) {
-			if(err) {
-			    let scan = /\((\d+) FAILED\)/;
-                if(scan.exec(stderr)){
-			        reject(`${scan[1]} tests have failed`)
-                }else {
+            if (err) {
+                let scan = /\((\d+) FAILED\)/;
+                if (scan.exec(stderr)) {
+                    reject(`${scan[1]} tests have failed`)
+                } else {
                     reject(stderr)
                 }
             }
-			else{
+            else {
                 console.log(stdout);
                 resolve(stdout);
-			}
+            }
         })
     })
 }
@@ -142,36 +143,36 @@ function reportSuccess(issue) {
 }
 
 function createLabelsIfNeeded() {
-	return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         GH.getLabels()
             .then((body) => {
                 let match = _.findWhere(body, LABELS.TESTING);
                 if (!match) {
                     GH.addLabel(LABELS.TESTING)
-						.then(resolve)
-						.catch(reject)
+                        .then(resolve)
+                        .catch(reject)
                 }
                 else {
                     resolve();
                 }
             })
             .catch((err) => reject(`ghrepo.labels ${err}`));
-	})
+    })
 }
 
 function createCommentOnIssue(issue, comment) {
-	return new Promise((resolve, reject) => {
-	    if (issue && typeof issue.createComment === "function" && typeof comment === "string") {
+    return new Promise((resolve, reject) => {
+        if (issue && typeof issue.createComment === "function" && typeof comment === "string") {
             issue.createComment({
                 body: comment
             }, (error) => {
-                if(error) reject(`Unable to add comment ${error}`);
-                else{
+                if (error) reject(`Unable to add comment ${error}`);
+                else {
                     resolve(issue)
                 }
             });
-        }else{
-	        reject(`Unable to add comment`)
+        } else {
+            reject(`Unable to add comment`)
         }
     })
 }
