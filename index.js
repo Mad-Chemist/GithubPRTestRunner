@@ -42,14 +42,14 @@ function init() {
     client.limit(function (err, left, max, reset) {
         console.log(`Client rate limit check ${left}/${max} resets at ${new Date(reset * 1000)}`);
         createLabelsIfNeeded()
-			.then(getLatestPR)
+            .then(getLatestPR)
             .then((issue) => activePR = issue)
-			.then(addLabelTestingPR)
-			.then(checkoutPR)
-			.then(installDeps)
-			.then(runTests)
-			.then(() => reportSuccess(activePR))
-			.catch((err) => console.error(`Error caught: ${err}`))
+            .then(addLabelTestingPR)
+            .then(checkoutPR)
+            .then(installDeps)
+            .then(runTests)
+            .then(() => reportSuccess(activePR))
+            .catch((err) => console.error(`Error caught: ${err}`))
     });
 }
 
