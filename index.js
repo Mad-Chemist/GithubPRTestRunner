@@ -88,7 +88,7 @@ function checkoutPR(ghIssue) {
             else {
                 console.log(`Checking out source code from ${ghIssue.repo}/${ghIssue.number} into ${path}`);
                 checkout({
-                    url: `${REPO_CHECKOUT_PATH}`,
+                    url: REPO_CHECKOUT_PATH,
                     // args: ["--branch", branchName],
                     destination: path
                 })
