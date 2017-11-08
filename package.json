@@ -2,6 +2,10 @@
   "name": "pullrequesttester",
   "version": "1.0.0",
   "description": "To hook into GitHub, watch for PullRequests, and on PR run unit tests.",
+  "engines": {
+    "node": "~8.4.0",
+    "npm": "~5.3.0"
+  },
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,7 +13,6 @@
   "author": "Mad-Chemist",
   "license": "ISC",
   "devDependencies": {
-    "karma": "^1.7.1",
     "npm-run": "^4.1.2",
     "octonode": "^0.9.1",
     "tmp": "0.0.33",
