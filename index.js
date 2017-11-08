@@ -88,8 +88,7 @@ function checkoutPR(ghIssue) {
             else {
                 console.log(`Checking out source code from ${ghIssue.repo}/${ghIssue.number} into ${path}`);
                 checkout({
-                    // url: `${REPO_CHECKOUT_PATH}`,
-                    url: `https://${ACCESS_TOKEN}:x-oauth-basic@github.com/MusicChoice/Settop-Box.git`,
+                    url: `${REPO_CHECKOUT_PATH}`,
                     // args: ["--branch", branchName],
                     destination: path
                 })
