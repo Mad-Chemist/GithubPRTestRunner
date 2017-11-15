@@ -21,7 +21,7 @@ const _ = require('underscore');
 const github = require('octonode');
 const tmp = require('tmp');
 const npmRun = require('npm-run');
-const checkout = promisify(require('./git-checkout'));
+const checkout = require('./git-checkout');
 const path = require('path');
 
 const client = github.client(ACCESS_TOKEN);
@@ -29,7 +29,8 @@ let ghrepo = client.repo(REPO_PATH);
 let GH = {
     getLabels: promisify(ghrepo.labels.bind(ghrepo)),
     addLabel: promisify(ghrepo.label.bind(ghrepo)),
-    getPRs: promisify(ghrepo.prs.bind(ghrepo))
+    getPRs: promisify(ghrepo.prs.bind(ghrepo)),
+    getIssue: promisify(client.pr.bind(client))
 };
 let npm = promisify(npmRun.exec);
 let activePR;
@@ -56,14 +57,12 @@ function init() {
 function getLatestPR() {
     return GH.getPRs()
         .then((body) => {
-            let latestPR = body[0];
-            // let ghIssue = latestPR && client.issue(REPO_PATH, latestPR.number);
-            let ghIssue = client.issue(REPO_PATH, '398');
-            return ghIssue;
+            return _.find(body, (issue) => issue.hasOwnProperty('base') && issue.hasOwnProperty('head') && issue.state === 'open');
         });
 }
 
 function addLabelTestingPR(ghIssue) {
+    console.log(`Mark PR in testing...`);
     return new Promise((resolve, reject) => {
         if (ghIssue) {
             ghIssue.addLabels([LABELS.TESTING.name], (error) => {
@@ -81,19 +80,20 @@ function addLabelTestingPR(ghIssue) {
 
 function checkoutPR(ghIssue) {
     return new Promise((resolve, reject) => {
-        if (!ghIssue) return reject(`No issue to checkout`);
+        if (!ghIssue || !ghIssue.hasOwnProperty('base')) return reject(`No issue to checkout`);
 
-        tmp.dir(/*{ unsafeCleanup: true },*/ function (error, path, cleanupCallback) {
+        tmp.dir(/*{ unsafeCleanup: true },*/ function (error, path) {
             if (error) reject(`Unable to create temp dir: ${error}`);
             else {
-                console.log(`Checking out source code from ${ghIssue.repo}/${ghIssue.number} into ${path}`);
+                console.log(`Checking out source code from ${ghIssue.base.repo.full_name}/${ghIssue.number} into ${path}`);
                 checkout({
                     url: REPO_CHECKOUT_PATH,
-                    // args: ["--branch", branchName],
+                    base: ghIssue.base.sha,
+                    head: ghIssue.head.sha,
                     destination: path
                 })
-                    .then(() => resolve(path))
-                    .catch((error) => reject(`Unable to checkout repo: ${error}`))
+                .then(() => resolve(path))
+                .catch((error) => reject(`Unable to checkout repo: ${error}`))
             }
         })
     })
@@ -109,6 +109,7 @@ function installDeps(dir) {
                     cwd: cwd
                 })
                     .then(() => resolve(cwd))
+                    .catch((err) => reject(`Failed to install dependencies: ${err}`))
             })
 
             .catch((err) => reject(`Failed to install dependencies: ${err}`))
