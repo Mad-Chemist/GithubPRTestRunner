@@ -13,7 +13,7 @@ const LABELS = {
     },
     FAIL: {
         name: "FAILURE",
-        color: "28a745"
+        color: "b60205"
     }
 };
 const {promisify} = require('util');
@@ -21,7 +21,7 @@ const _ = require('underscore');
 const github = require('octonode');
 const tmp = require('tmp');
 const npmRun = require('npm-run');
-const checkout = promisify(require('./git-checkout'));
+const checkout = require('./git-checkout');
 const path = require('path');
 
 const client = github.client(ACCESS_TOKEN);
@@ -29,7 +29,8 @@ let ghrepo = client.repo(REPO_PATH);
 let GH = {
     getLabels: promisify(ghrepo.labels.bind(ghrepo)),
     addLabel: promisify(ghrepo.label.bind(ghrepo)),
-    getPRs: promisify(ghrepo.prs.bind(ghrepo))
+    getPRs: promisify(ghrepo.prs.bind(ghrepo)),
+    getIssue: promisify(client.pr.bind(client))
 };
 let npm = promisify(npmRun.exec);
 let activePR;
@@ -41,59 +42,45 @@ init();
 function init() {
     client.limit(function (err, left, max, reset) {
         console.log(`Client rate limit check ${left}/${max} resets at ${new Date(reset * 1000)}`);
-        createLabelsIfNeeded()
-            .then(getLatestPR)
-            .then((issue) => activePR = issue)
-            .then(addLabelTestingPR)
+        getLatestPR()
+            .then((pr) => activePR = pr)
+            .then((pr) => addLabel(pr, LABELS.TESTING.name))
             .then(checkoutPR)
             .then(installDeps)
             .then(runTests)
             .then(() => reportSuccess(activePR))
-            .catch((err) => console.error(`Error caught: ${err}`))
+            .catch((err) => {
+                console.error(`Error caught: ${err}`);
+                if(err.hasOwnProperty('failures')){
+                    reportFailedTests(activePR, err.failures)
+                }
+            })
     });
 }
 
 function getLatestPR() {
     return GH.getPRs()
         .then((body) => {
-            let latestPR = body[0];
-            // let ghIssue = latestPR && client.issue(REPO_PATH, latestPR.number);
-            let ghIssue = client.issue(REPO_PATH, '398');
-            return ghIssue;
+            return _.find(body, (issue) => issue.hasOwnProperty('base') && issue.hasOwnProperty('head') && issue.state === 'open');
         });
-}
-
-function addLabelTestingPR(ghIssue) {
-    return new Promise((resolve, reject) => {
-        if (ghIssue) {
-            ghIssue.addLabels([LABELS.TESTING.name], (error) => {
-                if (error) {
-                    reject(`Unable to add label to PR: ${error}`)
-                } else {
-                    resolve(ghIssue)
-                }
-            });
-        } else {
-            reject(`No PR to label`);
-        }
-    })
 }
 
 function checkoutPR(ghIssue) {
     return new Promise((resolve, reject) => {
-        if (!ghIssue) return reject(`No issue to checkout`);
+        if (!ghIssue || !ghIssue.hasOwnProperty('base')) return reject(`No issue to checkout`);
 
-        tmp.dir(/*{ unsafeCleanup: true },*/ function (error, path, cleanupCallback) {
+        tmp.dir(/*{ unsafeCleanup: true },*/ function (error, path) {
             if (error) reject(`Unable to create temp dir: ${error}`);
             else {
-                console.log(`Checking out source code from ${ghIssue.repo}/${ghIssue.number} into ${path}`);
+                console.log(`Checking out source code from ${ghIssue.base.repo.full_name}/${ghIssue.number} into ${path}`);
                 checkout({
                     url: REPO_CHECKOUT_PATH,
-                    // args: ["--branch", branchName],
+                    base: ghIssue.base.sha,
+                    head: ghIssue.head.sha,
                     destination: path
                 })
-                    .then(() => resolve(path))
-                    .catch((error) => reject(`Unable to checkout repo: ${error}`))
+                .then(() => resolve(path))
+                .catch((error) => reject(`Unable to checkout repo: ${error}`))
             }
         })
     })
@@ -109,6 +96,7 @@ function installDeps(dir) {
                     cwd: cwd
                 })
                     .then(() => resolve(cwd))
+                    .catch((err) => reject(`Failed to install dependencies: ${err}`))
             })
 
             .catch((err) => reject(`Failed to install dependencies: ${err}`))
@@ -122,9 +110,10 @@ function runTests(dir) {
             cwd: dir
         }, function (err, stdout, stderr) {
             if (err) {
+                console.log(`ERROR IN TEST CMD: ${err}`);
                 let scan = /\((\d+) FAILED\)/;
                 if (scan.exec(stderr)) {
-                    reject(`${scan[1]} tests have failed`)
+                    reject({failures:scan[1]})
                 } else {
                     reject(stderr)
                 }
@@ -137,41 +126,59 @@ function runTests(dir) {
     })
 }
 
-function reportSuccess(issue) {
-    return createCommentOnIssue(issue, `Successfully ran tests`);
+function reportSuccess(pr) {
+    createCommentOnIssue(pr, `Successfully ran tests`)
+        .then(removeLabel(pr,LABELS.TESTING.name))
+        .then(removeLabel(pr,LABELS.FAIL.name))
+        .then(addLabel(pr, LABELS.PASS.name))
 }
 
-function createLabelsIfNeeded() {
-    return new Promise((resolve, reject) => {
-        GH.getLabels()
-            .then((body) => {
-                let match = _.findWhere(body, LABELS.TESTING);
-                if (!match) {
-                    GH.addLabel(LABELS.TESTING)
-                        .then(resolve)
-                        .catch(reject)
-                }
-                else {
-                    resolve();
-                }
-            })
-            .catch((err) => reject(`ghrepo.labels ${err}`));
-    })
+function reportFailedTests(pr, failureCount) {
+    createCommentOnIssue(pr, `Pull request failed ${failureCount} tests`)
+        .then(removeLabel(pr,LABELS.TESTING.name))
+        .then(removeLabel(pr,LABELS.PASS.name))
+        .then(addLabel(pr, LABELS.FAIL.name))
 }
 
 function createCommentOnIssue(issue, comment) {
     return new Promise((resolve, reject) => {
-        if (issue && typeof issue.createComment === "function" && typeof comment === "string") {
-            issue.createComment({
-                body: comment
-            }, (error) => {
-                if (error) reject(`Unable to add comment ${error}`);
-                else {
+            ensureIssueApi(issue).createComment({
+                    body: comment
+                }, (error) => {
+                    if (error) reject(`Unable to add comment ${error}`);
+                    else {
+                        resolve(issue)
+                    }
+                });
+    })
+}
+
+function removeLabel(issue, label) {
+    console.log(`Removing label ${label}`);
+    return new Promise((resolve, reject) => {
+        ensureIssueApi(issue)
+            .removeLabel(label, (err) => {
+                if(err) reject(`Cannot remove label ${label}`);
+                else resolve(issue)
+            });
+    })
+}
+
+function addLabel(issue, label) {
+    console.log(`Adding label ${label}`);
+    return new Promise((resolve, reject) => {
+        ensureIssueApi(issue)
+            .addLabels([label], (error) => {
+                if (error) {
+                    reject(`Unable to add label to PR: ${error}`)
+                } else {
                     resolve(issue)
                 }
             });
-        } else {
-            reject(`Unable to add comment`)
-        }
     })
+}
+
+function ensureIssueApi(prOrIssue) {
+    if(prOrIssue instanceof github.issue) return prOrIssue;
+    return new github.issue(REPO_PATH, prOrIssue.number, client)
 }
